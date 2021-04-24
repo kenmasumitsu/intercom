@@ -2,6 +2,7 @@
 
 from abc import ABC, abstractmethod
 import argparse
+import datetime
 import dotenv
 import logging
 import logging.handlers
@@ -38,11 +39,12 @@ class FrameReader(ABC):
         pass
 
     @abstractmethod
-    def shouldOpenAgain(self) -> bool:
+    def should_open_again(self) -> bool:
         pass
 
     @abstractmethod
-    def read(self, chunk=CHUNK) -> Optional[np.ndarray]:
+    #def read(self, chunk=CHUNK) -> Optional[np.ndarray]:
+    def read(self, chunk=CHUNK) -> Optional[bytes]:
         pass
 
     @abstractmethod
@@ -78,15 +80,16 @@ class WavFrameReader(FrameReader):
 
         return True
 
-    def shouldOpenAgain(self) -> bool:
+    def should_open_again(self) -> bool:
         return False
 
-    def read(self, chunk=CHUNK) -> Optional[np.ndarray]:
+    def read(self, chunk=CHUNK) -> Optional[bytes]:
         frames = self._wavFile.readframes(chunk)
         if not frames:
             return None
 
-        return np.frombuffer(frames, dtype='int16')
+        return farames
+        #return np.frombuffer(frames, dtype='int16')
 
     def close(self) -> bool:
         self._wavFile.close()
@@ -140,15 +143,16 @@ class MicFrameReader(FrameReader):
 
         return True
 
-    def shouldOpenAgain(self) -> bool:
+    def should_open_again(self) -> bool:
         return True
 
-    def read(self, chunk=CHUNK) -> Optional[np.ndarray]:
+    def read(self, chunk=CHUNK) -> Optional[bytes]:
         if not self._stream.is_active():
             return None
 
         frames = self._stream.read(CHUNK)
-        return np.frombuffer(frames, dtype='int16')
+        return frames
+        #return np.frombuffer(frames, dtype='int16')
 
     def close(self) -> bool:
         if self._stream:
@@ -232,17 +236,34 @@ def speak_alexa() -> None:
     subprocess.run(shlex.split(cmd))
 
 
+def save_wav(folder: pathlib.Path, frames) -> None:
+    now = datetime.datetime.now()
+    filename = "detect-" + now.strftime('%Y%m%d_%H%M%S') + '.wav'
+    path = pathlib.Path(folder, filename)
+    logging.info(f"save wav file. {path}")
+    wav_file = wave.open(str(path), "wb")
+    wav_file.setnchannels(CHANNELS)
+    wav_file.setsampwidth(2)
+    wav_file.setframerate(RATE)
+    wav_file.writeframes(b"".join(frames))
+    wav_file.close()
+
 def main() -> None:
     dotenv.load_dotenv(verbose=True)
 
     parser = argparse.ArgumentParser()
     parser.add_argument("-v", "--verbose", help="verbose", action="count", default=0)
     parser.add_argument("-c", "--console", help="console output", action='store_true')
+    parser.add_argument("-w", "--wav_folder", help="Output folder to store detected wav filess", default=".")
     args = parser.parse_args()
 
     logging_level = logging.INFO if args.verbose == 0 else logging.DEBUG
     global logger
     logger = setup_logger(__name__, args.console, logging_level, "intercom.log")
+
+    wav_folder = pathlib.Path(args.wav_folder)
+    if (not wav_folder.exists()):
+        wav_folder.mkdir(parents=True)
 
     # frame_reader: FrameReader = WavFrameReader('test-data/sample1.wav')
     frame_reader: FrameReader = MicFrameReader()
@@ -254,7 +275,7 @@ def main() -> None:
             logger.info("Success")
             break
 
-        if not frame_reader.shouldOpenAgain():
+        if not frame_reader.should_open_again():
             frame_reader.close()
             return
 
@@ -263,10 +284,11 @@ def main() -> None:
     # Read frames
     counter: int = 0
     skip_count: int = 0
-    window_frames = None
+    frames_list = []
+    np_frames_list = []
     while True:
         frames = frame_reader.read()
-        logger.debug(f"frames: {frames}")
+        logger.debug(f"frames: {type(frames), {len(frames)}}")
         if counter == 0:
             logger.info(".")
         counter = counter + 1 if counter < 10 else 0
@@ -276,28 +298,32 @@ def main() -> None:
             break
 
         skip_count = max(0, skip_count - 1)
-        if window_frames is None:
-            window_frames = frames
-        else:
-            window_frames = np.concatenate([window_frames, frames])
 
-        window_frames = window_frames[max(0, len(window_frames) - WINDOW_IN_FRAMES):]
+        frames_list.append(frames)
+        np_frames_list.append(np.frombuffer(frames, dtype='int16'))
 
-        if len(window_frames) == WINDOW_IN_FRAMES:
-            # FFT
-            amp, freq = fft(window_frames)
+        if len(frames_list) * CHUNK < WINDOW_IN_FRAMES:
+            continue
 
-            # Find peaks
-            index, peaks = findpeaks(freq, amp)
+        if len(frames_list) * CHUNK > WINDOW_IN_FRAMES:
+            frames_list = frames_list[1:]
+            np_frames_list = np_frames_list[1:]
 
-            # Detect
-            if has_freq(index, FREQ_1ST) and has_freq(index, FREQ_2ND):
-                logger.info(f"detect!!! {skip_count}")
+        # FFT
+        amp, freq = fft(np.concatenate(np_frames_list))
 
-                if skip_count == 0:
-                    speak_alexa()
+        # Find peaks
+        index, peaks = findpeaks(freq, amp)
 
-                skip_count = 5
+        # Detect
+        if has_freq(index, FREQ_1ST) and has_freq(index, FREQ_2ND):
+            logger.info(f"detect!!! {skip_count}")
+
+            if skip_count == 0:
+                speak_alexa()
+                save_wav(wav_folder, frames_list)
+
+            skip_count = 5
 
     frame_reader.close()
 

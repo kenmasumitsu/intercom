@@ -268,7 +268,7 @@ while [ "$#" -gt 0 ] ; do
 			fi
 			STATIONID=$2
 			shift
-			# stationIDs are "s1234" or "s12345" 
+			# stationIDs are "s1234" or "s12345"
 			if [ -n "${STATIONID##s[0-9][0-9][0-9][0-9]*}" -a -n "${STATIONID##p[0-9][0-9][0-9][0-9]*}" ] ; then
 				# search for station name
 				STATIONID=$(${CURL} ${OPTS} -s --data-urlencode "query=${STATIONID}" -G "https://api.tunein.com/profiles?fullTextSearch=true" | jq -r '.Items[] | select(.ContainerType == "Stations") | .Children[] | select( .Index==1 ) | .GuideId')
@@ -712,7 +712,7 @@ if [ -n "${SEQUENCECMD}" ] ; then
 			C=0
 			for D in $DEVICEVOLSPEAK ; do
 				if [ $C -eq $IDX ] ; then
-					if [ -n "${D}" ] ; then SVOL=$D ; fi 
+					if [ -n "${D}" ] ; then SVOL=$D ; fi
 					break
 				fi
 				C=$((C+1))
@@ -720,7 +720,7 @@ if [ -n "${SEQUENCECMD}" ] ; then
 
 			# try to retrieve the "currently playing" volume
 			VOL=$(get_volume)
-			
+
 			if [ -z "${VOL}" ] ; then
 				# get the normal volume of the current device type
 				C=0
@@ -909,7 +909,7 @@ show_queue()
 		PARENTDEVICE=$(jq --arg serial ${PARENTID} -r '.devices[] | select(.serialNumber == $serial) | .deviceType' ${DEVLIST})
 		PARENT="&lemurId=${PARENTID}&lemurDeviceType=${PARENTDEVICE}"
 	fi
-	
+
  ${CURL} ${OPTS} -s -b ${COOKIE} -A "${BROWSER}" -H "DNT: 1" -H "Connection: keep-alive" -L\
   -H "Content-Type: application/json; charset=UTF-8" -H "Referer: https://alexa.${AMAZON}/spa/index.html" -H "Origin: https://alexa.${AMAZON}"\
   -H "csrf: $(awk "\$0 ~/.${AMAZON}.*csrf[ \\s\\t]+/ {print \$7}" ${COOKIE})" -X GET \
