@@ -18,7 +18,7 @@ import time
 import wave
 
 
-RATE: int = 8000   # サンプリング周波数、フレーム数
+RATE: int = 8000            # サンプリング周波数、フレーム数
 CHUNK: int = int(RATE / 2)  # PyAudioで一度に取得するサンプリング数. サンプリング周波数の半分。0.5秒分
 FORMAT = pyaudio.paInt16  # フォーマット
 CHANNELS: int = 1  # チャンネル数 （モノラル）
@@ -43,7 +43,6 @@ class FrameReader(ABC):
         pass
 
     @abstractmethod
-    #def read(self, chunk=CHUNK) -> Optional[np.ndarray]:
     def read(self, chunk=CHUNK) -> Optional[bytes]:
         pass
 
@@ -88,8 +87,7 @@ class WavFrameReader(FrameReader):
         if not frames:
             return None
 
-        return farames
-        #return np.frombuffer(frames, dtype='int16')
+        return frames
 
     def close(self) -> bool:
         self._wavFile.close()
@@ -152,7 +150,6 @@ class MicFrameReader(FrameReader):
 
         frames = self._stream.read(CHUNK)
         return frames
-        #return np.frombuffer(frames, dtype='int16')
 
     def close(self) -> bool:
         if self._stream:
@@ -221,10 +218,18 @@ def findpeaks(x: np.ndarray, y: np.ndarray, n: int = 50, w: int = 100) -> Tuple[
 
 
 # ピークに、指定された周波数が含まれるかチェック
-def has_freq(freq: np.ndarray, target: float) -> bool:
-    l = freq.tolist()
-    res = list(filter(lambda x: target - 5 <= x and x <= target + 5, l))
-    return bool(res)
+def has_freq(freqs: np.ndarray, peaks: np.ndarray, target: float) -> bool:
+    for freq, peak in zip(freqs.tolist(), peaks.tolist()):
+        if target - 2 <= freq and freq <= target + 2:
+            logger.info(f"peak {target}, {freq} {peak}")
+            if peak > 20000:
+                return True
+
+    return False
+
+    # l = freq.tolist()
+    # res = list(filter(lambda x: target - 5 <= x and x <= target + 5, l))
+    # return bool(res)
 
 
 # Alexa Echo に 話させる。
@@ -281,13 +286,17 @@ def main() -> None:
 
         time.sleep(1)
 
-    # Read frames
     counter: int = 0
     skip_count: int = 0
     frames_list = []
     np_frames_list = []
     while True:
+        # Read frames
         frames = frame_reader.read()
+        if not frames:
+            logger.info("End of frames")
+            break
+
         logger.debug(f"frames: {type(frames), {len(frames)}}")
         if counter == 0:
             logger.info(".")
@@ -316,7 +325,7 @@ def main() -> None:
         index, peaks = findpeaks(freq, amp)
 
         # Detect
-        if has_freq(index, FREQ_1ST) and has_freq(index, FREQ_2ND):
+        if has_freq(index, peaks, FREQ_1ST) and has_freq(index, peaks, FREQ_2ND):
             logger.info(f"detect!!! {skip_count}")
 
             if skip_count == 0:
