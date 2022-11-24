@@ -5,5 +5,5 @@
 SCRIPT_DIR=$(cd $(dirname $0); pwd)
 
 cd $SCRIPT_DIR
-mkdir wav
+mkdir -p wav
 nohup python detector.py -w wav $@ &
